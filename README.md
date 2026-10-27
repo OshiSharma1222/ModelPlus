@@ -1,5 +1,7 @@
 # ModelPulse
 
+[![tests](https://github.com/OshiSharma1222/ModelPlus/actions/workflows/tests.yml/badge.svg)](https://github.com/OshiSharma1222/ModelPlus/actions/workflows/tests.yml)
+
 **An interactive AI reliability lab: can we still trust this model when the data changes?**
 
 ModelPulse is a Python + Streamlit application that shows when a machine-learning model is
@@ -58,6 +60,15 @@ ModelPulse lets you:
 | **Drift Simulator** | **Audit Report** |
 | ![Drift simulator](figures/drift_simulator.png) | ![Audit report](figures/audit_report.png) |
 
+### Interface
+
+The interface is designed to read like an instrument panel rather than a dashboard template.
+Colour carries meaning and is used the same way in every chart and table: warm grey is the
+reference or baseline batch, burnt orange is the current batch, red marks a material decline.
+Each verdict sits on a two-by-two grid of *drift detected* × *performance declined*, so a
+"silent failure" (Experiment B) looks visibly different from "an alert with no impact"
+(Experiment A). Numbers use tabular figures in IBM Plex Mono so before / after columns align.
+
 ### Drift scenarios
 
 | Scenario | What it does (severity 0 -> 1) |
@@ -91,8 +102,26 @@ Fitted artifacts are cached in `models/` (git-ignored).
 
 ```bash
 python scripts/run_experiments.py   # regenerate reports/ and figures/
-python -m pytest                    # 52 tests: metrics, drift, scenarios, preprocessing, app
 ```
+
+### Testing
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium   # skip if Chrome or Edge is installed
+python -m pytest                        # 67 tests
+```
+
+| Layer | Where | What it checks |
+|---|---|---|
+| Unit | `tests/test_metrics.py`, `test_drift.py`, `test_scenarios.py`, `test_data.py` | Metric definitions against hand calculations, BH correction, KS / chi-square behaviour, scenario invariants (rows, labels and marginals preserved), training-only preprocessing, quality counts |
+| Pipeline | `tests/test_experiment.py` | Real dataset end to end: control is clean, Experiment A drifts without decline, Experiment B declines without drift, missing values are reported as a data-quality failure, reports contain every section |
+| App | `tests/test_app.py` | The Streamlit script in-process (AppTest): every scenario, the presets, the model switch |
+| Browser | `tests/e2e/test_browser.py` | A real Streamlit server driven by Playwright: page load, every tab, presets, sidebar select and slider, model switch, both report downloads, no JavaScript errors, no horizontal scroll at phone width |
+
+The same suite runs on every push in GitHub Actions on a clean Ubuntu machine, followed by
+`scripts/run_experiments.py`. Browser tests skip themselves if Playwright is not installed.
+`python scripts/capture_screenshots.py` regenerates the screenshots in this README.
 
 > **Windows note:** if `import sklearn.tree` fails with *"An Application Control policy has
 > blocked this file"*, Smart App Control is blocking a scikit-learn DLL. The pinned
@@ -232,15 +261,21 @@ ModelPlus/
 │   ├── scenarios.py            # reproducible drift scenarios
 │   ├── experiment.py           # experiment-to-evidence workflow, severity sweeps
 │   ├── report.py               # Markdown / HTML audit reports
-│   └── plots.py                # Plotly figures
+│   ├── plots.py                # Plotly figures (shared chart template)
+│   └── ui.py                   # stylesheet and HTML components for the app
 ├── scripts/
 │   ├── download_data.py
-│   └── run_experiments.py      # regenerates reports/ and figures/
-├── tests/                      # pytest suite (52 tests)
+│   ├── run_experiments.py      # regenerates reports/ and figures/
+│   └── capture_screenshots.py  # regenerates the app screenshots
+├── tests/                      # unit, pipeline and AppTest suites
+│   └── e2e/                    # Playwright browser tests against a live server
 ├── reports/                    # generated audit reports + results.csv
 ├── figures/                    # README figures and app screenshots
 ├── data/README.md              # dataset source, license, usage
-├── requirements.txt
+├── .streamlit/config.toml      # theme: colours, IBM Plex type, radius
+├── .github/workflows/tests.yml # CI: full test suite + experiment reproduction
+├── requirements.txt            # runtime dependencies (pinned)
+├── requirements-dev.txt        # + pytest, Playwright
 └── LICENSE
 ```
 
