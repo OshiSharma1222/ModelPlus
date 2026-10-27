@@ -7,4 +7,3 @@ streamlit==1.66.1
 plotly==7.1.0
 matplotlib==3.11.2
 markdown==3.11.2
-pytest==9.1.1
