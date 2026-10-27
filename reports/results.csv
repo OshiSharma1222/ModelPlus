@@ -1,0 +1,11 @@
+experiment,scenario,severity,features,model,drift_status,drifted_features,auc_baseline,auc_current,auc_delta,auc_delta_low,auc_delta_high,f1_baseline,f1_current,f1_delta,material_decline,verdict
+control,Unchanged control,0.0,,Decision Tree,Stable,,0.9203,0.9203,0.0,0.0,0.0,0.6637,0.6637,0.0,False,Neither drift nor decline
+control,Unchanged control,0.0,,Naive Bayes,Stable,,0.8736,0.8736,0.0,0.0,0.0,0.6092,0.6092,0.0,False,Neither drift nor decline
+experiment-a,Numerical shift,0.8,"Administrative_Duration, Informational_Duration, ProductRelated_Duration",Decision Tree,Warning,"ProductRelated_Duration, Administrative_Duration",0.9203,0.9234,0.0031,-0.0001,0.0064,0.6637,0.6619,-0.0018,False,Drift without measurable decline
+experiment-a,Numerical shift,0.8,"Administrative_Duration, Informational_Duration, ProductRelated_Duration",Naive Bayes,Warning,"ProductRelated_Duration, Administrative_Duration",0.8736,0.8716,-0.002,-0.0033,-0.0006,0.6092,0.595,-0.0142,False,Drift without measurable decline
+experiment-b,Feature-outcome relationship shift,0.8,PageValues,Decision Tree,Stable,,0.9203,0.6685,-0.2517,-0.2748,-0.2267,0.6637,0.2763,-0.3875,True,Performance decline without detected drift
+experiment-b,Feature-outcome relationship shift,0.8,PageValues,Naive Bayes,Stable,,0.8736,0.74,-0.1337,-0.1494,-0.1174,0.6092,0.3689,-0.2404,True,Performance decline without detected drift
+categorical-shift,Categorical shift,0.8,VisitorType,Decision Tree,Warning,VisitorType,0.9203,0.9203,0.0,0.0,0.0,0.6637,0.6637,0.0,False,Drift without measurable decline
+categorical-shift,Categorical shift,0.8,VisitorType,Naive Bayes,Warning,VisitorType,0.8736,0.8723,-0.0014,-0.0023,-0.0003,0.6092,0.606,-0.0032,False,Drift without measurable decline
+missing-values,Missing-value injection,0.6,"PageValues, ExitRates",Decision Tree,Stable,,0.9203,0.8072,-0.1131,-0.138,-0.0918,0.6637,0.5112,-0.1525,True,Data-quality issue with performance decline
+missing-values,Missing-value injection,0.6,"PageValues, ExitRates",Naive Bayes,Stable,,0.8736,0.816,-0.0576,-0.0699,-0.0461,0.6092,0.5043,-0.1049,True,Data-quality issue with performance decline
