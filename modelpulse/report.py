@@ -92,8 +92,8 @@ def build_markdown(res: ExperimentResult, art: Artifacts) -> str:
     ]
     for key, label in config.MODEL_LABELS.items():
         comp = res.comparison[key].set_index("metric")
-        out.append(f"- {label}: ROC-AUC {_fmt(comp.loc['roc_auc', 'baseline'])} -> "
-                   f"{_fmt(comp.loc['roc_auc', 'current'])}, F1 {_fmt(comp.loc['f1', 'baseline'])} -> "
+        out.append(f"- {label}: ROC-AUC {_fmt(comp.loc['roc_auc', 'baseline'])} → "
+                   f"{_fmt(comp.loc['roc_auc', 'current'])}, F1 {_fmt(comp.loc['f1', 'baseline'])} → "
                    f"{_fmt(comp.loc['f1', 'current'])}; material decline: "
                    f"**{'yes' if res.performance[key]['declined'] else 'no'}**.")
     out += [

@@ -5,25 +5,37 @@ Run with:  streamlit run app.py
 
 from __future__ import annotations
 
+import markdown as md
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-from modelpulse import config, plots
+from modelpulse import __version__, config, plots, ui
 from modelpulse.drift import feature_summary
 from modelpulse.evaluation import expected_calibration_error
 from modelpulse.experiment import (
     load_or_build_artifacts, pca_projection, recommendations, run_experiment, severity_sweep,
 )
-from modelpulse.report import LIMITATIONS, build_html, build_markdown, drift_table, performance_table
+from modelpulse.report import LIMITATIONS, METRIC_LABELS, build_html, build_markdown
 from modelpulse.scenarios import SCENARIOS
 
-st.set_page_config(page_title="ModelPulse", page_icon=":material/monitor_heart:", layout="wide")
+st.set_page_config(page_title="ModelPulse", page_icon=":material/vital_signs:", layout="wide")
+st.markdown(ui.CSS, unsafe_allow_html=True)
 
 PRESETS = {
     "A": dict(scenario="numeric_shift", severity=0.8,
               features=list(SCENARIOS["numeric_shift"].default_features)),
     "B": dict(scenario="relationship_shift", severity=0.8, features=["PageValues"]),
 }
+PLOT_CONFIG = {"displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
+
+
+def html(fragment: str) -> None:
+    st.markdown(fragment, unsafe_allow_html=True)
+
+
+def chart(fig) -> None:
+    st.plotly_chart(fig, width="stretch", config=PLOT_CONFIG)
 
 
 @st.cache_resource(show_spinner="Training baseline models (first run only)...")
@@ -43,12 +55,13 @@ def get_sweep(scenario: str, features: tuple, seed: int):
 
 ART = get_artifacts()
 
-# ---------------------------------------------------------------- sidebar state
+# --------------------------------------------------------------------------- sidebar
 state = st.session_state
 state.setdefault("scenario", "control")
 state.setdefault("severity", 0.5)
 state.setdefault("features", [])
 state.setdefault("seed", config.SEED)
+state.setdefault("primary", "tree")
 
 
 def reset_features():
@@ -66,267 +79,334 @@ def apply_preset(name: str):
 
 
 with st.sidebar:
-    st.title("ModelPulse")
-    st.caption("Can we still trust this model under changing conditions?")
-    st.subheader("Experiment")
+    html(ui.brand(__version__))
     st.selectbox("Scenario", list(SCENARIOS), key="scenario",
                  format_func=lambda k: SCENARIOS[k].label, on_change=reset_features)
-    spec = SCENARIOS[state.scenario]
-    st.slider("Severity", 0.0, 1.0, step=0.05, key="severity",
-              help="0 = no change, 1 = the most severe version of the scenario",
-              disabled=state.scenario == "control")
-    st.multiselect("Features to modify", list(spec.eligible), key="features",
-                   disabled=state.scenario == "control")
-    st.number_input("Random seed", min_value=0, max_value=10_000_000, step=1, key="seed")
-    primary = st.radio("Primary model for the verdict", list(config.MODEL_LABELS),
-                       format_func=config.MODEL_LABELS.get, horizontal=True)
-    st.divider()
-    st.subheader("Demonstrations")
-    st.button("Experiment A: drift, little impact", on_click=apply_preset, args=("A",),
-              width="stretch")
-    st.button("Experiment B: impact, no drift", on_click=apply_preset, args=("B",),
-              width="stretch")
-    st.button("Reset to control", on_click=reset_control, width="stretch")
-    st.divider()
-    st.caption(f"Reference: training set ({ART.info['n_train']:,} sessions). Current: modified "
-               f"held-out test set ({ART.info['n_test']:,} sessions). Labels are never changed.")
+    is_control = state.scenario == "control"
+    st.slider("Severity", 0.0, 1.0, step=0.05, key="severity", disabled=is_control,
+              help="0 leaves the batch untouched; 1 is the most severe version of the scenario.")
+    st.multiselect("Features", list(SCENARIOS[state.scenario].eligible), key="features",
+                   disabled=is_control, placeholder="None")
+    st.number_input("Seed", min_value=0, max_value=10_000_000, step=1, key="seed")
+    st.radio("Verdict model", list(config.MODEL_LABELS), key="primary", horizontal=True,
+             format_func=config.MODEL_LABELS.get)
 
+    html(ui.side_label("Demonstrations"))
+    st.button("A — drift that doesn't matter", on_click=apply_preset, args=("A",), width="stretch")
+    st.button("B — failure that drift tests miss", on_click=apply_preset, args=("B",), width="stretch")
+    st.button("Reset to control", on_click=reset_control, width="stretch", type="tertiary")
+    html(ui.side_note(
+        f"Reference is the training set ({ART.info['n_train']:,} sessions). Each current batch "
+        f"is a modified copy of the held-out test set ({ART.info['n_test']:,} sessions); labels "
+        "are never touched, so every comparison is on identical sessions."
+        "<br><br>Data: UCI Online Shoppers Purchasing Intention, CC BY 4.0."))
+
+primary = state.primary
 res = get_experiment(state.scenario, float(state.severity), tuple(state.features),
                      int(state.seed), primary)
-th = res.thresholds
-ds = res.drift_summary
-q = res.quality
+th, ds, q = res.thresholds, res.drift_summary, res.quality
+spec = SCENARIOS[res.scenario]
+SHORT = {"tree": "tree", "nb": "NB"}
+
+# Point the feature inspector at the biggest change whenever a new experiment runs.
+run_id = (res.scenario, res.severity, tuple(res.features), res.seed)
+if state.get("last_run") != run_id:
+    state.last_run = run_id
+    state.drift_feature = res.drift["feature"].iloc[0]
 
 
-def comp_row(key: str, metric: str) -> pd.Series:
-    return res.comparison[key].set_index("metric").loc[metric]
+def comp(key: str) -> pd.DataFrame:
+    return res.comparison[key].set_index("metric")
 
 
-tabs = st.tabs(["Overview", "Data Drift Explorer", "Model Reliability", "Drift Simulator",
-                "Audit Report"])
+# --------------------------------------------------------------------------- masthead
+meta = [f"seed {res.seed}", res.scenario]
+if res.scenario != "control":
+    meta += [f"severity {res.severity:.2f}", ", ".join(res.features) or "no features"]
+html(ui.masthead(meta, spec.label, spec.description))
 
-# ---------------------------------------------------------------- 1. Overview
+tabs = st.tabs(["Overview", "Data drift", "Model reliability", "Drift simulator", "Audit report"])
+
+# --------------------------------------------------------------------------- 1 overview
 with tabs[0]:
-    st.header(f"{SCENARIOS[res.scenario].label}"
-              + ("" if res.scenario == "control" else f" - severity {res.severity:.2f}"))
-    box = (st.error if res.verdict["decline"] else
-           st.warning if (res.verdict["drift"] or res.verdict["quality_issue"]) else st.success)
-    box(f"**{res.verdict['title']}.** {res.verdict['explanation']}")
+    html(ui.verdict_panel(res.verdict["title"], res.verdict["explanation"],
+                          res.verdict["drift"], res.verdict["decline"], res.verdict["quality_issue"]))
 
-    c = st.columns(6)
-    c[0].metric("Reference sessions", f"{len(ART.reference):,}")
-    c[1].metric("Current sessions", f"{len(res.current):,}")
-    c[2].metric(f"Drift status ({ds['n_drifted']}/{ds['n_features']} features)", ds["status"])
-    c[3].metric("Missing / invalid values", f"{q['missing_cells']:,} / {q['invalid_values']:,}")
-    auc, f1 = comp_row(primary, "roc_auc"), comp_row(primary, "f1")
-    c[4].metric(f"ROC-AUC ({config.MODEL_LABELS[primary]})", f"{auc['current']:.3f}",
-                f"{auc['delta']:+.3f}", help=f"Baseline {auc['baseline']:.3f}")
-    c[5].metric(f"F1 ({config.MODEL_LABELS[primary]})", f"{f1['current']:.3f}",
-                f"{f1['delta']:+.3f}", help=f"Baseline {f1['baseline']:.3f}")
+    auc, f1 = comp(primary).loc["roc_auc"], comp(primary).loc["f1"]
+    perf_tone = lambda d, limit: "bad" if d <= -limit else ("ok" if d >= 0 else "neutral")  # noqa: E731
+    html(ui.readout([
+        ("Reference", f"{len(ART.reference):,}", "training sessions", None),
+        ("Current", f"{len(res.current):,}", "test sessions", None),
+        ("Drifted features", f"{ds['n_drifted']} / {ds['n_features']}", ds["status"].lower(),
+         "accent" if ds["n_drifted"] else "ok"),
+        ("Missing · invalid", f"{q['missing_cells']:,} · {q['invalid_values']:,}",
+         f"{q['rows_with_missing']:,} rows affected" if q["rows_with_missing"] else "clean",
+         "bad" if q["rows_with_missing"] or q["invalid_values"] else "ok"),
+        (f"ROC-AUC · {SHORT[primary]}", f"{auc['current']:.3f}",
+         f"{auc['delta']:+.3f} from {auc['baseline']:.3f}", perf_tone(auc["delta"], th.auc_drop)),
+        (f"F1 · {SHORT[primary]}", f"{f1['current']:.3f}",
+         f"{f1['delta']:+.3f} from {f1['baseline']:.3f}", perf_tone(f1["delta"], th.f1_drop)),
+    ]))
 
-    left, right = st.columns([3, 2])
+    left, right = st.columns([1.25, 1], gap="large")
     with left:
-        st.subheader("Findings")
-        findings = []
+        html(ui.section("Evidence"))
+        rows = []
         if ds["drifted_features"]:
             top = res.drift.iloc[0]
-            findings.append(f"{ds['n_drifted']} feature(s) drifted: "
-                            f"{', '.join(ds['drifted_features'])}. Largest change: **{top['feature']}** "
-                            f"({top['effect_name']} = {top['effect']:.3f}; {top['detail']}).")
+            rows.append(("Input drift",
+                         f"{ds['n_drifted']} feature(s) passed both the significance and effect-size "
+                         f"rules. Largest: <code>{ui.e(top['feature'])}</code>, "
+                         f"{ui.e(top['effect_name'])} {top['effect']:.3f} ({ui.e(top['detail'])})."))
         else:
-            findings.append("No feature passed both the significance and effect-size rules.")
+            rows.append(("Input drift", "No feature passed both the significance and effect-size rules."))
         if ds["n_significant_but_small"]:
-            findings.append(f"{ds['n_significant_but_small']} feature(s) were statistically "
-                            "significant but too small to matter under the pre-registered threshold.")
+            rows.append(("Small changes", f"{ds['n_significant_but_small']} feature(s) were significant "
+                                          "but below the minimum effect size, so they are not flagged."))
         for key, label in config.MODEL_LABELS.items():
-            a = comp_row(key, "roc_auc")
+            a = comp(key).loc["roc_auc"]
             ci = (f" (95% CI {a['delta_low']:+.3f} to {a['delta_high']:+.3f})"
                   if "delta_low" in a else "")
-            word = "material decline" if res.performance[key]["declined"] else "no material decline"
-            findings.append(f"{label}: ROC-AUC changed by {a['delta']:+.3f}{ci} - {word}.")
+            word = "a material decline" if res.performance[key]["declined"] else "within limits"
+            rows.append((label, f"ROC-AUC {a['delta']:+.3f}{ci}, {word}."))
         if q["rows_with_missing"]:
-            findings.append(f"{q['rows_with_missing']:,} sessions contain missing values that were "
-                            "imputed with training statistics.")
+            rows.append(("Data quality", f"{q['rows_with_missing']:,} sessions had missing inputs "
+                                         "and were scored on training-median imputations."))
         if q["out_of_training_range"]:
-            findings.append(f"{q['out_of_training_range']:,} values fall outside the training range.")
-        st.markdown("\n".join(f"- {f}" for f in findings))
-        st.subheader("Recommended investigations")
-        st.markdown("\n".join(f"{i}. {r}" for i, r in enumerate(recommendations(res, ART), 1)))
+            rows.append(("Extrapolation", f"{q['out_of_training_range']:,} values fall outside the "
+                                          "range seen in training."))
+        html(ui.ledger(rows))
+        html(ui.section("What to investigate"))
+        html(ui.ordered(recommendations(res, ART)))
     with right:
-        st.subheader("Performance at a glance")
-        rows = []
+        html(ui.section("Performance", "same sessions, before → after"))
+        trs = []
         for key, label in config.MODEL_LABELS.items():
-            for metric in ["roc_auc", "f1", "recall", "precision"]:
-                r = comp_row(key, metric)
-                rows.append({"Model": label, "Metric": metric.upper().replace("_", "-"),
-                             "Baseline": round(r["baseline"], 3), "Current": round(r["current"], 3),
-                             "Change": round(r["delta"], 3)})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.subheader("Data quality")
-        st.dataframe(q["table"][(q["table"].iloc[:, 1:] > 0).any(axis=1)]
-                     if (q["table"].iloc[:, 1:] > 0).any().any() else
-                     pd.DataFrame({"result": ["No missing, invalid or out-of-range values"]}),
-                     hide_index=True, width="stretch")
-    with st.expander("What this result does not prove"):
-        st.markdown("\n".join(f"- {lim}" for lim in LIMITATIONS))
+            trs.append(f'<tr class="group"><td colspan="4">{label}</td></tr>')
+            c = comp(key)
+            for metric in ["roc_auc", "f1", "precision", "recall"]:
+                r = c.loc[metric]
+                trs.append(f"<tr><td>{METRIC_LABELS[metric]}</td><td class='n'>{r['baseline']:.3f}</td>"
+                           f"<td class='n'>{r['current']:.3f}</td>{ui.delta_cell(r['delta'])}</tr>")
+        html(ui.table([("Metric", False), ("Before", True), ("After", True), ("Change", True)], trs))
 
-# ---------------------------------------------------------------- 2. Drift explorer
+        html(ui.section("Data quality"))
+        qt = q["table"].set_index("feature")
+        issues = qt[(qt > 0).any(axis=1)]
+        if issues.empty:
+            html('<p class="mp-note">All 17 features passed the schema, missing-value, domain-range '
+                 "and category checks.</p>")
+        else:
+            trs = [f"<tr><td>{ui.e(f)}</td>" + "".join(f"<td class='n'>{int(v):,}</td>" for v in r.values)
+                   + "</tr>" for f, r in issues.iterrows()]
+            html(ui.table([("Feature", False), ("Missing", True), ("Invalid", True),
+                           ("Out of range", True), ("Unseen", True)], trs))
+
+    html(ui.section("What this result does not prove"))
+    html(ui.limits(LIMITATIONS))
+
+# --------------------------------------------------------------------------- 2 drift
 with tabs[1]:
-    st.header("Data Drift Explorer")
-    st.caption(f"Feature drift = BH-adjusted p < {th.alpha} and effect size at or above its "
-               f"threshold (KS D >= {th.ks_min_effect}, TVD >= {th.tvd_min_effect}).")
-    feature = st.selectbox("Feature", res.drift["feature"].tolist(),
-                           format_func=lambda f: f"{f}  ({'drifted' if res.drift.set_index('feature').loc[f, 'drifted'] else 'stable'})")
-    row = res.drift.set_index("feature").loc[feature]
-    left, right = st.columns([3, 2])
+    left, right = st.columns([1, 1.45], gap="large")
     with left:
-        st.plotly_chart(plots.distribution_fig(ART.reference[feature], res.current[feature], feature),
-                        width="stretch")
+        html(ui.section("Features ranked by effect", f"line = threshold · BH α = {th.alpha}"))
+        html(ui.effect_rank(res.drift))
+        html(f'<p class="mp-note" style="margin-top:.8rem">Numerical: KS D ≥ {th.ks_min_effect}. '
+             f"Categorical: total variation distance ≥ {th.tvd_min_effect}. A feature is flagged only "
+             "when it is significant after Benjamini–Hochberg correction <i>and</i> passes its "
+             "effect-size threshold.</p>")
     with right:
-        m = st.columns(3)
-        m[0].metric(f"{row['effect_name']} (threshold {row['min_effect']:.2f})",
-                    f"{row['effect']:.3f}")
-        p = row["p_adjusted"]
-        m[1].metric("BH-adjusted p", "< 0.001" if p < 0.001 else f"{p:.3f}")
-        m[2].metric("Verdict", "Drifted" if row["drifted"] else "Stable")
-        st.caption(f"Test: {row['test']}. {row['secondary_name']} = {row['secondary']:.3f}; "
-                   f"PSI = {row['psi']:.3f}. {row['detail']}")
+        html(ui.section("Inspect a feature"))
+        feature = st.selectbox("Feature", res.drift["feature"].tolist(), key="drift_feature",
+                               label_visibility="collapsed")
+        row = res.drift.set_index("feature").loc[feature]
+        tone, label = (("accent", "drifted") if row["drifted"] else
+                       ("warn", "significant, small") if row["significant"] else ("neutral", "stable"))
+        html(f'<div class="mp-feature-head"><b>{ui.e(feature)}</b>{ui.pill(label, tone)}</div>'
+             f'<div class="mp-stats">{ui.e(row["test"])} · <em>{ui.e(row["effect_name"])} '
+             f'{row["effect"]:.3f}</em> (threshold {row["min_effect"]:.2f}) · p<sub>BH</sub> '
+             f'<em>{ui.fmt_p(row["p_adjusted"])}</em> · {ui.e(row["secondary_name"])} '
+             f'{row["secondary"]:.3f} · PSI {row["psi"]:.3f}<br>{ui.e(row["detail"])}</div>')
+        chart(plots.distribution_fig(ART.reference[feature], res.current[feature], feature))
         summary = feature_summary(ART.reference, res.current, feature)
         if feature in config.NUMERIC_FEATURES:
-            fmt = lambda v: f"{v:,.0f}" if abs(v) >= 1000 else f"{v:,.4g}"  # noqa: E731
+            chart(plots.ecdf_fig(ART.reference[feature], res.current[feature], feature))
+            num = lambda v: f"{v:,.0f}" if abs(v) >= 1000 else f"{v:,.4g}"  # noqa: E731
+            trs = []
+            for stat in ["mean", "median", "variance", "std_dev", "min", "max", "missing"]:
+                rv, cv = summary.loc[stat, "reference"], summary.loc[stat, "current"]
+                change = (cv - rv) / abs(rv) if rv else np.nan
+                trs.append(f"<tr><td>{stat.replace('_', ' ')}</td><td class='n'>{num(rv)}</td>"
+                           f"<td class='n'>{num(cv)}</td><td class='n flat'>"
+                           f"{'–' if np.isnan(change) else f'{change:+.0%}'}</td></tr>")
+            html(ui.table([("Statistic", False), ("Reference", True), ("Current", True),
+                           ("Change", True)], trs))
         else:
-            fmt = "{:.1%}".format
-        st.dataframe(summary.style.format(fmt), width="stretch")
-    if feature in config.NUMERIC_FEATURES:
-        st.plotly_chart(plots.ecdf_fig(ART.reference[feature], res.current[feature], feature),
-                        width="stretch")
+            trs = [f"<tr><td>{ui.e(lv)}</td><td class='n'>{r['reference']:.1%}</td>"
+                   f"<td class='n'>{r['current']:.1%}</td>"
+                   f"<td class='n flat'>{r['difference'] * 100:+.1f} pp</td></tr>"
+                   for lv, r in summary.iterrows()]
+            html(ui.table([("Level", False), ("Reference", True), ("Current", True),
+                           ("Change", True)], trs))
 
-    st.subheader("Features ranked by detected change")
-    st.plotly_chart(plots.drift_ranking_fig(res.drift), width="stretch")
-    st.dataframe(drift_table(res).assign(Drifted=lambda d: d["Drifted"].str.replace("*", "")),
-                 hide_index=True, width="stretch")
+    html(ui.section("Multivariate view", "PCA on standardised numerical features"))
+    left, right = st.columns([2.2, 1], gap="large")
+    with left:
+        chart(plots.pca_fig(pca_projection(ART, res.current, seed=res.seed)))
+    with right:
+        ev = ART.pca.explained_variance_ratio_
+        html(f'<p class="mp-note">The projection is fitted on the training set and explains '
+             f'{ev[0]:.0%} (PC1) and {ev[1]:.0%} (PC2) of the variance. 1,500 sessions are sampled '
+             "from each batch.</p><p class='mp-note'>It is exploratory: overlapping clouds do not "
+             "prove the model is reliable, and Experiment B is a case where they overlap "
+             "perfectly while performance collapses.</p>")
 
-    st.subheader("Multivariate view")
-    st.plotly_chart(plots.pca_fig(pca_projection(ART, res.current, seed=res.seed)),
-                    width="stretch")
-    st.caption(f"PCA fitted on the training set's numerical features "
-               f"(explained variance: PC1 {ART.pca.explained_variance_ratio_[0]:.0%}, "
-               f"PC2 {ART.pca.explained_variance_ratio_[1]:.0%}). Exploratory only - "
-               "overlapping clouds do not prove the model is reliable.")
-
-# ---------------------------------------------------------------- 3. Model reliability
+# --------------------------------------------------------------------------- 3 reliability
 with tabs[2]:
-    st.header("Model Reliability")
-    key = st.radio("Model", list(config.MODEL_LABELS), format_func=config.MODEL_LABELS.get,
-                   horizontal=True, key="reliability_model")
+    key = st.segmented_control("Model", list(config.MODEL_LABELS), key="reliability_model",
+                               format_func=config.MODEL_LABELS.get, default="tree",
+                               label_visibility="collapsed") or "tree"
     model = ART.models[key]
     y = ART.y_test
     base_p, cur_p = ART.baseline_prob[key], res.current_prob[key]
-    st.caption(f"Both batches contain the same {len(y):,} sessions with their original labels. "
-               f"Decision threshold {model.threshold:.2f} (chosen on validation data). "
-               f"Confidence intervals: paired bootstrap, {th.bootstrap_reps} replicates.")
-    verdict = res.performance[key]
-    (st.error if verdict["declined"] else st.success)(
-        f"{config.MODEL_LABELS[key]}: "
-        + ("material performance decline." if verdict["declined"] else
-           "no material performance decline under the pre-registered rule."))
-    left, right = st.columns([3, 2])
+    declined = res.performance[key]["declined"]
+    html(f'<p class="mp-note" style="margin:.4rem 0 0">'
+         f'{ui.pill("material decline" if declined else "within limits", "bad" if declined else "ok")}'
+         f'&nbsp; {len(y):,} identical sessions · decision threshold {model.threshold:.2f} '
+         f"(chosen on validation data) · paired bootstrap, {th.bootstrap_reps} replicates</p>")
+
+    left, right = st.columns([1.15, 1], gap="large")
     with left:
-        st.dataframe(performance_table(res, key), hide_index=True, width="stretch")
+        html(ui.section("Metrics", "95% CI of the change"))
+        trs = []
+        for _, r in res.comparison[key].iterrows():
+            higher_better = r["metric"] != "brier"
+            ci = (f"{r['delta_low']:+.3f} … {r['delta_high']:+.3f}" if "delta_low" in r else "–")
+            trs.append(f"<tr><td>{METRIC_LABELS[r['metric']]}</td><td class='n'>{r['baseline']:.3f}</td>"
+                       f"<td class='n'>{r['current']:.3f}</td>{ui.delta_cell(r['delta'], higher_better)}"
+                       f"<td class='n flat'>{ci}</td></tr>")
+        html(ui.table([("Metric", False), ("Before", True), ("After", True), ("Change", True),
+                       ("95% CI", True)], trs))
         mc = res.mcnemar[key]
-        st.caption(f"McNemar test: {mc['baseline_only_correct']} sessions correct only before the "
-                   f"shift vs {mc['current_only_correct']} only after (p = {mc['p_value']:.3g}).")
+        html(f'<p class="mp-note" style="margin-top:.7rem">McNemar: {mc["baseline_only_correct"]:,} '
+             f'sessions were classified correctly only before the shift and {mc["current_only_correct"]:,} '
+             f'only after (exact p = {mc["p_value"]:.2g}).</p>')
     with right:
-        st.plotly_chart(plots.confusion_fig(res.metrics[key]["baseline"], res.metrics[key]["current"]),
-                        width="stretch")
-    a, b = st.columns(2)
-    a.plotly_chart(plots.probability_fig(base_p, cur_p, model.threshold), width="stretch")
-    b.plotly_chart(plots.roc_fig(y, base_p, cur_p), width="stretch")
-    a, b = st.columns([3, 2])
-    a.plotly_chart(plots.calibration_fig(y, base_p, cur_p), width="stretch")
-    with b:
-        st.subheader("Calibration")
-        st.metric("Expected calibration error", f"{expected_calibration_error(y, cur_p):.3f}",
-                  f"{expected_calibration_error(y, cur_p) - expected_calibration_error(y, base_p):+.3f}"
-                  " vs baseline", delta_color="inverse")
-        st.caption("Calibration is evaluated separately: a model can rank sessions well (high "
-                   "AUC) while its probabilities are not meaningful likelihoods. Naive Bayes is "
-                   "typically over-confident because its independence assumption is violated.")
-        if key == "tree":
-            st.subheader("Feature importance")
-            st.plotly_chart(plots.importance_fig(model.feature_importance()), width="stretch")
-    st.subheader("Classifier comparison")
-    rows = []
-    for k, label in config.MODEL_LABELS.items():
-        for batch in ["baseline", "current"]:
-            m = res.metrics[k][batch]
-            rows.append({"Model": label, "Batch": batch, "ROC-AUC": m["roc_auc"], "F1": m["f1"],
-                         "Precision": m["precision"], "Recall": m["recall"],
-                         "Accuracy": m["accuracy"], "Brier": m["brier"]})
-    st.dataframe(pd.DataFrame(rows).style.format(precision=3), hide_index=True,
-                 width="stretch")
+        html(ui.section("Confusion matrices"))
+        html(ui.confusion(res.metrics[key]["baseline"], res.metrics[key]["current"]))
 
-# ---------------------------------------------------------------- 4. Simulator
+    html(ui.section("Scores"))
+    cols = st.columns(3, gap="medium")
+    with cols[0]:
+        chart(plots.probability_fig(base_p, cur_p, model.threshold))
+    with cols[1]:
+        chart(plots.roc_fig(y, base_p, cur_p))
+    with cols[2]:
+        chart(plots.calibration_fig(y, base_p, cur_p))
+    ece_b, ece_c = expected_calibration_error(y, base_p), expected_calibration_error(y, cur_p)
+    html(f'<p class="mp-note">Expected calibration error {ece_b:.3f} → {ece_c:.3f}. Calibration is '
+         "assessed separately from ranking: a model can order sessions well (high AUC) while its "
+         "probabilities are not trustworthy likelihoods. Naive Bayes is a clear example — its "
+         "independence assumption makes it over-confident.</p>")
+
+    left, right = st.columns([1.3, 1], gap="large")
+    with left:
+        html(ui.section("Classifier comparison"))
+        trs = []
+        for k, label in config.MODEL_LABELS.items():
+            for batch in ["baseline", "current"]:
+                m = res.metrics[k][batch]
+                trs.append(f"<tr><td>{label if batch == 'baseline' else ''}</td><td>{batch}</td>"
+                           + "".join(f"<td class='n'>{ui.fmt(m[x])}</td>"
+                                     for x in ["roc_auc", "f1", "precision", "recall", "brier"])
+                           + "</tr>")
+        html(ui.table([("Model", False), ("Batch", False), ("AUC", True), ("F1", True),
+                       ("Precision", True), ("Recall", True), ("Brier", True)], trs))
+    with right:
+        html(ui.section("Decision Tree importance", "Gini, top 8"))
+        chart(plots.importance_fig(ART.models["tree"].feature_importance()))
+
+# --------------------------------------------------------------------------- 4 simulator
 with tabs[3]:
-    st.header("Drift Simulator")
-    st.markdown(f"**{SCENARIOS[res.scenario].label}.** {SCENARIOS[res.scenario].description}")
-    st.caption("Change the scenario, severity and features in the sidebar. Every run is "
-               "reproducible from its seed.")
+    left, right = st.columns([1, 1.25], gap="large")
+    with left:
+        html(ui.section("Transformation log"))
+        html(ui.log_block(res.log))
+        html(ui.section("Pre-registered rules"))
+        html(ui.ledger([
+            ("Feature drift", f"BH-adjusted p &lt; {th.alpha} and KS D ≥ {th.ks_min_effect} / "
+                              f"TVD ≥ {th.tvd_min_effect}"),
+            ("Batch status", f"“Drift detected” at ≥ {th.drift_share_alert:.0%} of features, "
+                             "“Warning” at one or more"),
+            ("Material decline", f"AUC −{th.auc_drop} or F1 −{th.f1_drop}, with the paired 95% CI "
+                                 "excluding zero"),
+        ]))
+    with right:
+        html(ui.section("Experiment → evidence"))
+        auc = comp(primary).loc["roc_auc"]
+        top = res.drift.iloc[0]
+        html(ui.steps([
+            ("Create a reproducible batch",
+             f"{spec.label} at severity {res.severity:.2f}, seed {res.seed}; "
+             f"{len(res.current):,} sessions, labels unchanged.", "neutral"),
+            ("Check data quality",
+             f"{q['missing_cells']:,} missing, {q['invalid_values']:,} invalid, "
+             f"{q['out_of_training_range']:,} outside the training range.",
+             "bad" if res.verdict["quality_issue"] else "ok"),
+            ("Test every feature for drift",
+             f"{ds['n_drifted']} of {ds['n_features']} flagged"
+             + (f": {', '.join(ds['drifted_features'])}." if ds["drifted_features"] else "."),
+             "accent" if ds["n_drifted"] else "ok"),
+            ("Compare distributions",
+             f"Largest effect {top['feature']} ({top['effect_name']} {top['effect']:.3f}, "
+             f"{'above' if top['material'] else 'below'} its {top['min_effect']:.2f} threshold).",
+             "accent" if top["material"] else "ok"),
+            ("Score with the same fixed models", "Both models were trained once and are never refitted.",
+             "neutral"),
+            ("Measure performance on known labels",
+             f"{config.MODEL_LABELS[primary]} ROC-AUC {auc['baseline']:.3f} → {auc['current']:.3f} "
+             f"({auc['delta']:+.3f}).", "bad" if res.verdict["decline"] else "ok"),
+        ]))
+        html(f'<p style="margin:.2rem 0 0 1.7rem;font-weight:600">→ {ui.e(res.verdict["title"])}</p>')
 
-    st.subheader("Experiment to evidence")
-    auc = comp_row(primary, "roc_auc")
-    steps = [
-        ("Create a reproducible shifted batch", " ".join(res.log)),
-        ("Check data quality", f"{q['missing_cells']:,} missing, {q['invalid_values']:,} invalid, "
-                               f"{q['out_of_training_range']:,} outside training range."),
-        ("Detect which features changed", f"{ds['n_drifted']} drifted: "
-                                          f"{', '.join(ds['drifted_features']) or 'none'}."),
-        ("Compare distributions", f"Largest effect: {res.drift.iloc[0]['feature']} "
-                                  f"({res.drift.iloc[0]['effect_name']} = {res.drift.iloc[0]['effect']:.3f}, "
-                                  f"{'above' if res.drift.iloc[0]['material'] else 'below'} the "
-                                  f"{res.drift.iloc[0]['min_effect']:.2f} threshold)."),
-        ("Score with the same fixed models", "Both models were trained once and never refitted."),
-        ("Measure performance on known labels",
-         f"{config.MODEL_LABELS[primary]} ROC-AUC {auc['baseline']:.3f} -> {auc['current']:.3f} "
-         f"({auc['delta']:+.3f})."),
-    ]
-    for i, (title, detail) in enumerate(steps, 1):
-        st.markdown(f"**{i}. {title}** - {detail}")
-    st.info(f"**Conclusion: {res.verdict['title']}.**")
-
-    st.subheader("Severity sweep")
+    html(ui.section("Severity sweep", "every severity from 0 to 1, same seed and features"))
     if res.scenario == "control":
-        st.caption("Choose a non-control scenario to sweep its severity.")
+        html('<p class="mp-note">Choose a scenario other than the control to sweep its severity.</p>')
     else:
-        sweep = get_sweep(res.scenario, tuple(res.features), res.seed)
-        st.plotly_chart(plots.sweep_fig(sweep, th.auc_drop), width="stretch")
-        st.caption("Dotted lines mark each model's baseline AUC minus the pre-registered "
-                   f"{th.auc_drop} decline limit.")
+        chart(plots.sweep_fig(get_sweep(res.scenario, tuple(res.features), res.seed), th.auc_drop,
+                              res.severity))
+        html('<p class="mp-note">Dotted lines mark each model’s baseline AUC minus the '
+             f"{th.auc_drop} decline limit; the grey line is the severity currently selected.</p>")
 
-    st.subheader("Contrasting experiments")
-    contrast = []
+    html(ui.section("Two contrasting experiments", "seed 2026, Decision Tree"))
+    cards = []
     for name, p in PRESETS.items():
         r = get_experiment(p["scenario"], p["severity"], tuple(p["features"]), config.SEED, "tree")
         a = r.comparison["tree"].set_index("metric").loc["roc_auc"]
-        contrast.append({"Experiment": name, "Scenario": SCENARIOS[p["scenario"]].label,
-                         "Features": ", ".join(p["features"]),
-                         "Drifted features": r.drift_summary["n_drifted"],
-                         "Tree AUC change": round(a["delta"], 3), "Verdict": r.verdict["title"]})
-    st.dataframe(pd.DataFrame(contrast), hide_index=True, width="stretch")
-    st.caption("Experiment A changes inputs the model barely uses: drift is obvious but "
-               "performance holds. Experiment B breaks the PageValues-purchase relationship "
-               "while leaving its distribution untouched: no drift alarm, large decline. "
-               "Monitoring signals must be read in context.")
+        cards.append({
+            "label": f"EXPERIMENT {name} · {SCENARIOS[p['scenario']].label.lower()}",
+            "title": r.verdict["title"],
+            "rows": [("Modified", ", ".join(p["features"])),
+                     ("Features flagged", f"{r.drift_summary['n_drifted']} / 17"),
+                     ("ROC-AUC", f"{a['baseline']:.3f} → {a['current']:.3f}"),
+                     ("Recall", f"{r.metrics['tree']['baseline']['recall']:.3f} → "
+                                f"{r.metrics['tree']['current']['recall']:.3f}")],
+        })
+    html(ui.contrast_cards(cards))
+    html('<p class="mp-note" style="margin-top:.8rem">A triples browsing durations — features the '
+         "tree barely uses — so the alarm is loud and harmless. B shuffles PageValues among "
+         "sessions: its distribution is identical, no test can fire, and the model fails. "
+         "Monitoring signals have to be read in context.</p>")
 
-# ---------------------------------------------------------------- 5. Report
+# --------------------------------------------------------------------------- 5 report
 with tabs[4]:
-    st.header("Audit Report")
     report_md = build_markdown(res, ART)
-    stem = f"modelpulse-{res.scenario}-sev{int(res.severity * 100):03d}-seed{res.seed}"
-    a, b, _ = st.columns([1, 1, 3])
-    a.download_button("Download Markdown", report_md, file_name=f"{stem}.md",
-                      mime="text/markdown", width="stretch")
-    b.download_button("Download HTML", build_html(report_md), file_name=f"{stem}.html",
-                      mime="text/html", width="stretch")
-    with st.container(border=True):
-        st.markdown(report_md)
+    stem = f"modelpulse-{res.scenario}-sev{int(round(res.severity * 100)):03d}-seed{res.seed}"
+    left, b1, b2 = st.columns([3, 1, 1])
+    left.markdown(f'<div class="mp-filename">{stem}.md · {len(report_md.splitlines())} lines</div>',
+                  unsafe_allow_html=True)
+    b1.download_button("Download .md", report_md, file_name=f"{stem}.md", mime="text/markdown",
+                       width="stretch")
+    b2.download_button("Download .html", build_html(report_md), file_name=f"{stem}.html",
+                       mime="text/html", width="stretch", type="primary")
+    html(ui.report(md.markdown(report_md, extensions=["tables"])))

@@ -68,7 +68,7 @@ def numeric_drift(ref: pd.Series, cur: pd.Series) -> dict:
         "effect": float(ks.statistic),
         "secondary": float(smd),
         "psi": population_stability_index(r, c),
-        "detail": f"mean {r.mean():,.3g} -> {c.mean():,.3g}; median {np.median(r):,.3g} -> {np.median(c):,.3g}",
+        "detail": f"mean {r.mean():,.3g} → {c.mean():,.3g}; median {np.median(r):,.3g} → {np.median(c):,.3g}",
     }
 
 
@@ -109,7 +109,7 @@ def categorical_drift(ref: pd.Series, cur: pd.Series, min_expected: float = 5.0,
         "effect": tvd,
         "secondary": cramers_v,
         "psi": psi,
-        "detail": f"'{levels[biggest]}' {p_ref[biggest]:.1%} -> {p_cur[biggest]:.1%}",
+        "detail": f"'{levels[biggest]}' {p_ref[biggest]:.1%} → {p_cur[biggest]:.1%}",
     }
 
 
