@@ -1,9 +1,33 @@
 [theme]
-primaryColor = "#4263EB"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F6FB"
-textColor = "#1F2433"
-font = "sans serif"
+base = "light"
+primaryColor = "#1F3A5F"
+backgroundColor = "#FAF9F6"
+secondaryBackgroundColor = "#F1EFEA"
+textColor = "#1C1B18"
+borderColor = "#E2DFD7"
+dataframeBorderColor = "#E2DFD7"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "4px"
+buttonRadius = "4px"
+baseFontSize = 15
+font = "'IBM Plex Sans':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
+headingFont = "'IBM Plex Sans':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
+codeFont = "'IBM Plex Mono':https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap, monospace"
+headingFontWeights = [600, 600, 500, 500, 500, 500]
+headingFontSizes = ["1.75rem", "1.2rem", "1rem", "0.95rem", "0.9rem", "0.85rem"]
+linkColor = "#1F3A5F"
+greenColor = "#2F6B47"
+redColor = "#A8321F"
+orangeColor = "#C2410C"
+chartCategoricalColors = ["#8C887E", "#C2410C", "#1F3A5F", "#2A7F7A"]
+
+[theme.sidebar]
+backgroundColor = "#F3F1EC"
+secondaryBackgroundColor = "#FFFFFF"
+
+[client]
+toolbarMode = "minimal"
 
 [server]
 headless = true
