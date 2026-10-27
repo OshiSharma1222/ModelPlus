@@ -1,7 +1,5 @@
 # ModelPulse
 
-[![tests](https://github.com/OshiSharma1222/ModelPlus/actions/workflows/tests.yml/badge.svg)](https://github.com/OshiSharma1222/ModelPlus/actions/workflows/tests.yml)
-
 **An interactive AI reliability lab: can we still trust this model when the data changes?**
 
 ModelPulse is a Python + Streamlit application that shows when a machine-learning model is
@@ -119,8 +117,7 @@ python -m pytest                        # 67 tests
 | App | `tests/test_app.py` | The Streamlit script in-process (AppTest): every scenario, the presets, the model switch |
 | Browser | `tests/e2e/test_browser.py` | A real Streamlit server driven by Playwright: page load, every tab, presets, sidebar select and slider, model switch, both report downloads, no JavaScript errors, no horizontal scroll at phone width |
 
-The same suite runs on every push in GitHub Actions on a clean Ubuntu machine, followed by
-`scripts/run_experiments.py`. Browser tests skip themselves if Playwright is not installed.
+Browser tests skip themselves if Playwright is not installed.
 `python scripts/capture_screenshots.py` regenerates the screenshots in this README.
 
 > **Windows note:** if `import sklearn.tree` fails with *"An Application Control policy has
@@ -273,7 +270,6 @@ ModelPlus/
 ├── figures/                    # README figures and app screenshots
 ├── data/README.md              # dataset source, license, usage
 ├── .streamlit/config.toml      # theme: colours, IBM Plex type, radius
-├── .github/workflows/tests.yml # CI: full test suite + experiment reproduction
 ├── requirements.txt            # runtime dependencies (pinned)
 ├── requirements-dev.txt        # + pytest, Playwright
 └── LICENSE
