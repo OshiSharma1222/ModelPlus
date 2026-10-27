@@ -1,14 +1,14 @@
 # ModelPulse audit report
 
-Generated 2026-10-27 19:57 UTC by ModelPulse v1.0.0.
+Generated 2026-10-27 20:40 UTC by ModelPulse v1.0.0.
 
 ## 1. Verdict
 
 **Neither drift nor decline.** No material drift and no material performance change were found. This does not prove the model is reliable - only that these checks did not find a problem in this batch.
 
 - Drift status: **Stable** (0 of 17 features drifted; 0 more were statistically significant but below the effect-size threshold).
-- Decision Tree: ROC-AUC 0.920 -> 0.920, F1 0.664 -> 0.664; material decline: **no**.
-- Naive Bayes: ROC-AUC 0.874 -> 0.874, F1 0.609 -> 0.609; material decline: **no**.
+- Decision Tree: ROC-AUC 0.920 → 0.920, F1 0.664 → 0.664; material decline: **no**.
+- Naive Bayes: ROC-AUC 0.874 → 0.874, F1 0.609 → 0.609; material decline: **no**.
 
 ## 2. Experiment settings
 
@@ -57,23 +57,23 @@ Transformation log:
 
 | Feature | Test | Effect | BH-adjusted p | Drifted | Change |
 |---|---|---|---|---|---|
-| TrafficType | Chi-square (Monte-Carlo) | TVD = 0.023 | 0.862 | no | '1' 20.2% -> 19.1% |
-| ProductRelated | Kolmogorov-Smirnov | KS D = 0.020 | 0.862 | no | mean 32 -> 31; median 18 -> 18 |
-| OperatingSystems | Chi-square (Monte-Carlo) | TVD = 0.019 | 0.862 | no | '3' 21.1% -> 19.9% |
-| Region | Chi-square | TVD = 0.018 | 0.862 | no | '9' 3.9% -> 4.6% |
-| BounceRates | Kolmogorov-Smirnov | KS D = 0.018 | 0.862 | no | mean 0.0221 -> 0.0224; median 0.0033 -> 0.00267 |
-| ProductRelated_Duration | Kolmogorov-Smirnov | KS D = 0.018 | 0.862 | no | mean 1.2e+03 -> 1.19e+03; median 602 -> 591 |
-| VisitorType | Chi-square | TVD = 0.017 | 0.449 | no | 'Returning_Visitor' 86.1% -> 84.4% |
-| Month | Chi-square | TVD = 0.016 | 0.862 | no | 'Oct' 4.2% -> 5.1% |
-| Administrative_Duration | Kolmogorov-Smirnov | KS D = 0.016 | 0.862 | no | mean 79.3 -> 84.4; median 8 -> 6 |
-| Administrative | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 2.32 -> 2.3; median 1 -> 1 |
-| Browser | Chi-square (Monte-Carlo) | TVD = 0.014 | 0.862 | no | '4' 5.7% -> 6.7% |
-| ExitRates | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 0.0429 -> 0.0435; median 0.025 -> 0.0259 |
-| Informational_Duration | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 35.4 -> 32.2; median 0 -> 0 |
-| Informational | Kolmogorov-Smirnov | KS D = 0.010 | 0.998 | no | mean 0.51 -> 0.49; median 0 -> 0 |
-| SpecialDay | Kolmogorov-Smirnov | KS D = 0.008 | 0.998 | no | mean 0.0622 -> 0.0596; median 0 -> 0 |
-| PageValues | Kolmogorov-Smirnov | KS D = 0.008 | 0.998 | no | mean 5.82 -> 6.06; median 0 -> 0 |
-| Weekend | Chi-square | TVD = 0.008 | 0.862 | no | 'False' 77.0% -> 76.2% |
+| TrafficType | Chi-square (Monte-Carlo) | TVD = 0.023 | 0.862 | no | '1' 20.2% → 19.1% |
+| ProductRelated | Kolmogorov-Smirnov | KS D = 0.020 | 0.862 | no | mean 32 → 31; median 18 → 18 |
+| OperatingSystems | Chi-square (Monte-Carlo) | TVD = 0.019 | 0.862 | no | '3' 21.1% → 19.9% |
+| Region | Chi-square | TVD = 0.018 | 0.862 | no | '9' 3.9% → 4.6% |
+| BounceRates | Kolmogorov-Smirnov | KS D = 0.018 | 0.862 | no | mean 0.0221 → 0.0224; median 0.0033 → 0.00267 |
+| ProductRelated_Duration | Kolmogorov-Smirnov | KS D = 0.018 | 0.862 | no | mean 1.2e+03 → 1.19e+03; median 602 → 591 |
+| VisitorType | Chi-square | TVD = 0.017 | 0.449 | no | 'Returning_Visitor' 86.1% → 84.4% |
+| Month | Chi-square | TVD = 0.016 | 0.862 | no | 'Oct' 4.2% → 5.1% |
+| Administrative_Duration | Kolmogorov-Smirnov | KS D = 0.016 | 0.862 | no | mean 79.3 → 84.4; median 8 → 6 |
+| Administrative | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 2.32 → 2.3; median 1 → 1 |
+| Browser | Chi-square (Monte-Carlo) | TVD = 0.014 | 0.862 | no | '4' 5.7% → 6.7% |
+| ExitRates | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 0.0429 → 0.0435; median 0.025 → 0.0259 |
+| Informational_Duration | Kolmogorov-Smirnov | KS D = 0.014 | 0.862 | no | mean 35.4 → 32.2; median 0 → 0 |
+| Informational | Kolmogorov-Smirnov | KS D = 0.010 | 0.998 | no | mean 0.51 → 0.49; median 0 → 0 |
+| SpecialDay | Kolmogorov-Smirnov | KS D = 0.008 | 0.998 | no | mean 0.0622 → 0.0596; median 0 → 0 |
+| PageValues | Kolmogorov-Smirnov | KS D = 0.008 | 0.998 | no | mean 5.82 → 6.06; median 0 → 0 |
+| Weekend | Chi-square | TVD = 0.008 | 0.862 | no | 'False' 77.0% → 76.2% |
 
 ## 5. Model performance on identical sessions
 
@@ -86,7 +86,7 @@ Transformation log:
 | Recall | 0.663 | 0.663 | +0.000 | [0.000, 0.000] |
 | F1-score | 0.664 | 0.664 | +0.000 | [0.000, 0.000] |
 | ROC-AUC | 0.920 | 0.920 | +0.000 | [0.000, 0.000] |
-| Brier score (lower is better) | 0.072 | 0.072 | +0.000 | [0.000, 0.000] |
+| Brier score (lower = better) | 0.072 | 0.072 | +0.000 | [0.000, 0.000] |
 
 McNemar test on paired correctness: 0 sessions correct only before the shift, 0 only after (p = 1.000).
 
@@ -99,7 +99,7 @@ McNemar test on paired correctness: 0 sessions correct only before the shift, 0 
 | Recall | 0.760 | 0.760 | +0.000 | [0.000, 0.000] |
 | F1-score | 0.609 | 0.609 | +0.000 | [0.000, 0.000] |
 | ROC-AUC | 0.874 | 0.874 | +0.000 | [0.000, 0.000] |
-| Brier score (lower is better) | 0.217 | 0.217 | +0.000 | [0.000, 0.000] |
+| Brier score (lower = better) | 0.217 | 0.217 | +0.000 | [0.000, 0.000] |
 
 McNemar test on paired correctness: 0 sessions correct only before the shift, 0 only after (p = 1.000).
 

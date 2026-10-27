@@ -22,8 +22,11 @@ from modelpulse.experiment import load_or_build_artifacts, run_experiment, sever
 from modelpulse.report import build_markdown  # noqa: E402
 from modelpulse.scenarios import SCENARIOS  # noqa: E402
 
-REF, CUR = "#4263EB", "#F76707"
-MODEL_COLORS = {"Decision Tree": "#4263EB", "Naive Bayes": "#0CA678"}
+REF, CUR, NAVY = "#8C887E", "#C2410C", "#1F3A5F"
+MODEL_COLORS = {"Decision Tree": NAVY, "Naive Bayes": "#2A7F7A"}
+plt.rcParams.update({"axes.edgecolor": "#1C1B18", "axes.labelcolor": "#6B675E", "xtick.color": "#6B675E",
+                     "ytick.color": "#6B675E", "font.size": 10, "figure.facecolor": "#FAF9F6",
+                     "axes.facecolor": "#FAF9F6", "savefig.facecolor": "#FAF9F6"})
 
 EXPERIMENTS = [
     ("control", "control", 0.0, None),
@@ -35,9 +38,9 @@ EXPERIMENTS = [
 
 
 def style(ax, title):
-    ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
+    ax.set_title(title, loc="left", fontsize=11, fontweight="bold", color="#1C1B18")
     ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(alpha=0.25)
+    ax.grid(color="#E2DFD7", lw=0.8)
 
 
 def main():
@@ -81,8 +84,8 @@ def main():
                                          (("B: relationship shift", "relationship_shift", ["PageValues"]), "--")]:
         sw = severity_sweep(art, scenario, feats, np.round(np.linspace(0, 1, 11), 2))
         tree = sw[sw["model"] == "Decision Tree"]
-        axes[0].plot(tree["severity"], tree["drift_share"], ls, marker="o", color="#E03131", label=label)
-        axes[1].plot(tree["severity"], tree["roc_auc"], ls, marker="o", color=REF, label=label)
+        axes[0].plot(tree["severity"], tree["drift_share"], ls, marker="o", color=CUR, label=label)
+        axes[1].plot(tree["severity"], tree["roc_auc"], ls, marker="o", color=NAVY, label=label)
     limit = config.DEFAULT_THRESHOLDS.auc_drop
     axes[1].axhline(results["control"].metrics["tree"]["baseline"]["roc_auc"] - limit,
                     color="grey", ls=":", label=f"baseline - {limit}")
@@ -99,9 +102,9 @@ def main():
     # Figure 2: drift ranking for experiment A
     d = results["experiment-a"].drift.sort_values("effect_ratio")
     fig, ax = plt.subplots(figsize=(7, 5))
-    colors = np.where(d["drifted"], "#E03131", np.where(d["significant"], "#FAB005", "#94A3B8"))
+    colors = np.where(d["drifted"], CUR, np.where(d["significant"], "#A66A00", "#C9C5BB"))
     ax.barh(d["feature"], d["effect_ratio"], color=colors)
-    ax.axvline(1, color="#495057", ls="--", lw=1)
+    ax.axvline(1, color="#1C1B18", ls="--", lw=1)
     style(ax, "Experiment A: effect size / drift threshold")
     ax.set_xlabel("red = drifted, amber = significant but small")
     fig.tight_layout()
